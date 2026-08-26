@@ -714,6 +714,20 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 # ============================================================
+# FRONTEND SERVING
+# ============================================================
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+
+@app.route("/", methods=["GET"])
+def serve_frontend():
+    """Serve the frontend HTML."""
+    frontend_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(frontend_path):
+        from flask import send_file
+        return send_file(frontend_path)
+    return jsonify({"message": "Gaze AI API is running", "docs": "/api/health"}), 200
+
+# ============================================================
 # STARTUP
 # ============================================================
 if __name__ == "__main__":
