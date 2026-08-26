@@ -328,6 +328,9 @@ class FaceAnalyzer:
         except Exception as e:
             logger.warning(f"Model warmup failed: {e}")
     
+    # Available models based on downloaded weights
+    AVAILABLE_ACTIONS = ["gender", "age"]
+    
     def analyze_face(
         self,
         image: np.ndarray,
@@ -346,12 +349,17 @@ class FaceAnalyzer:
             Dictionary with analysis results
         """
         if actions is None:
-            actions = ["gender", "age", "race", "emotion"]
+            actions = ["gender", "age"]
+        
+        # Filter to only available actions
+        available = [a for a in actions if a in self.AVAILABLE_ACTIONS]
+        if not available:
+            available = ["gender"]
         
         try:
             results = DeepFace.analyze(
                 img_path=image,
-                actions=actions,
+                actions=available,
                 detector_backend=Config.DETECTOR_BACKEND,
                 enforce_detection=enforce_detection,
                 silent=True
@@ -491,11 +499,11 @@ def predict_v1():
     
     try:
         # Parse request
-        actions = request.form.get('actions', 'gender,age,race,emotion').split(',')
-        actions = [a.strip() for a in actions if a.strip() in ['gender', 'age', 'race', 'emotion']]
+        actions = request.form.get('actions', 'gender,age').split(',')
+        actions = [a.strip() for a in actions if a.strip() in ['gender', 'age']]
         
         if not actions:
-            actions = ['gender', 'age', 'race', 'emotion']
+            actions = ['gender', 'age']
         
         # Get image
         image_bgr = None
@@ -538,10 +546,10 @@ def predict_v1():
                 "gender_scores": {k: round(v, 2) for k, v in r.get("gender", {}).items()},
                 "age": r.get("dominant_age"),
                 "age_range": r.get("age", {}),
-                "race": r.get("dominant_race"),
-                "race_scores": {k: round(v, 2) for k, v in r.get("race", {}).items()},
-                "emotion": r.get("dominant_emotion"),
-                "emotion_scores": {k: round(v, 2) for k, v in r.get("emotion", {}).items()},
+                "race": r.get("dominant_race", "N/A"),
+                "race_scores": {k: round(v, 2) for k, v in r.get("race", {}).items()} if r.get("race") else {},
+                "emotion": r.get("dominant_emotion", "N/A"),
+                "emotion_scores": {k: round(v, 2) for k, v in r.get("emotion", {}).items()} if r.get("emotion") else {},
                 "region": r.get("region"),
                 "confidence": round(r.get("confidence", 0), 2) if "confidence" in r else None
             }
