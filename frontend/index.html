@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gaze — Gender Recognition</title>
+<style>
+  :root{
+    --ink:#12130f;
+    --paper:#f2efe6;
+    --line:#12130f;
+    --accent:#3d5a80;
+    --accent-2:#b5651d;
+    --muted:#6b6a63;
+    --panel:#ffffff;
+    --mono: 'JetBrains Mono', 'Courier New', monospace;
+    --serif: 'Fraunces', 'Georgia', serif;
+    --sans: 'Inter', -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:var(--sans);}
+  ::selection{background:var(--accent-2);color:#fff;}
+
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px;}
+
+  header{border-bottom:2px solid var(--line);padding:28px 0;}
+  .brand{display:flex;justify-content:space-between;align-items:baseline;}
+  .brand h1{font-family:var(--serif);font-size:28px;margin:0;letter-spacing:-0.5px;}
+  .brand .tag{font-family:var(--mono);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+
+  .hero{padding:56px 0 40px;border-bottom:1px solid var(--line);}
+  .hero h2{font-family:var(--serif);font-size:44px;line-height:1.05;margin:0 0 16px;max-width:640px;}
+  .hero p{max-width:520px;color:var(--muted);font-size:16px;line-height:1.6;}
+
+  main{padding:48px 0 80px;display:grid;grid-template-columns:1.1fr 0.9fr;gap:40px;}
+  @media (max-width:760px){ main{grid-template-columns:1fr;} }
+
+  .panel{background:var(--panel);border:2px solid var(--line);padding:28px;position:relative;}
+  .panel .eyebrow{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:14px;}
+
+  .tabs{display:flex;gap:0;margin-bottom:24px;border:2px solid var(--line);}
+  .tab{flex:1;text-align:center;padding:10px 0;cursor:pointer;font-family:var(--mono);font-size:13px;text-transform:uppercase;letter-spacing:1px;background:var(--paper);border-right:2px solid var(--line);transition:.15s;}
+  .tab:last-child{border-right:none;}
+  .tab.active{background:var(--ink);color:var(--paper);}
+
+  .drop{border:2px dashed var(--muted);padding:36px 16px;text-align:center;cursor:pointer;transition:.15s;}
+  .drop:hover, .drop.drag{border-color:var(--accent-2);background:#fbf7ef;}
+  .drop p{margin:8px 0 0;color:var(--muted);font-size:14px;}
+  input[type=file]{display:none;}
+
+  #video, #preview{width:100%;border:2px solid var(--line);display:block;background:#000;}
+  #canvas{display:none;}
+
+  .row{display:flex;gap:10px;margin-top:16px;}
+  button{font-family:var(--mono);font-size:13px;text-transform:uppercase;letter-spacing:1px;background:var(--ink);color:var(--paper);border:2px solid var(--ink);padding:12px 18px;cursor:pointer;transition:.15s;}
+  button:hover{background:var(--accent-2);border-color:var(--accent-2);}
+  button.ghost{background:transparent;color:var(--ink);}
+  button.ghost:hover{background:var(--ink);color:var(--paper);}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+
+  .result{min-height:220px;display:flex;flex-direction:column;justify-content:center;}
+  .result .empty{color:var(--muted);font-family:var(--mono);font-size:13px;}
+  .verdict{font-family:var(--serif);font-size:40px;margin:0 0 4px;}
+  .conf{font-family:var(--mono);font-size:13px;color:var(--muted);margin-bottom:20px;}
+  .bar-row{display:grid;grid-template-columns:70px 1fr 50px;align-items:center;gap:10px;margin:6px 0;font-family:var(--mono);font-size:12px;}
+  .bar-track{height:10px;background:var(--paper);border:1px solid var(--line);}
+  .bar-fill{height:100%;background:var(--accent);}
+  .bar-fill.w{background:var(--accent-2);}
+  .err{color:#a33;font-family:var(--mono);font-size:13px;}
+  .loading{font-family:var(--mono);font-size:13px;color:var(--muted);}
+  .loading::after{content:'';display:inline-block;width:10px;}
+
+  .arch{margin-top:40px;border-top:2px solid var(--line);padding-top:32px;}
+  .arch h3{font-family:var(--serif);font-size:22px;margin:0 0 16px;}
+  .arch pre{font-family:var(--mono);font-size:12.5px;line-height:1.7;background:var(--panel);border:2px solid var(--line);padding:20px;overflow-x:auto;}
+
+  footer{border-top:2px solid var(--line);padding:20px 0;font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Gaze</h1>
+      <span class="tag">Face &amp; Gender Recognition</span>
+    </div>
+  </header>
+
+  <section class="hero">
+    <h2>Upload a face. Get a prediction in under a second.</h2>
+    <p>Gaze detects faces in an image and classifies gender using a pretrained deep learning model, served through a lightweight API. Try it below with a photo or your webcam.</p>
+  </section>
+
+  <main>
+    <div class="panel">
+      <div class="eyebrow">01 — Input</div>
+      <div class="tabs">
+        <div class="tab active" data-tab="upload">Upload</div>
+        <div class="tab" data-tab="camera">Webcam</div>
+      </div>
+
+      <div id="upload-pane">
+        <div class="drop" id="drop">
+          <img id="preview" style="display:none;" />
+          <div id="drop-text">
+            <p><strong>Click to choose</strong> or drag an image here</p>
+          </div>
+        </div>
+        <input type="file" id="file-input" accept="image/*" />
+      </div>
+
+      <div id="camera-pane" style="display:none;">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+        <div class="row">
+          <button id="cam-start" class="ghost">Start Camera</button>
+          <button id="cam-shot" disabled>Capture</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="predict-btn" disabled>Analyze</button>
+        <button id="reset-btn" class="ghost">Reset</button>
+      </div>
+    </div>
+
+    <div class="panel result" id="result">
+      <div class="eyebrow">02 — Prediction</div>
+      <div class="empty">No image analyzed yet.</div>
+    </div>
+  </main>
+
+  <div class="arch">
+    <h3>How this works</h3>
+    <pre>
+Browser (this page)
+   |  image file / webcam frame
+   v
+POST /api/predict   ----------------->   Flask API (backend/app.py)
+   (multipart or base64)                    |
+                                            +-- OpenCV: face detection
+                                            +-- DeepFace: gender classification
+                                            +-- JSON response
+   <---------------------------------------  { gender, confidence, faces[] }
+   render result
+    </pre>
+  </div>
+
+  <footer>Gaze — demo project · backend runs locally on :5000</footer>
+</div>
+
+<script>
+// Configuration - can be overridden via environment or config file
+const CONFIG = {
+  API_URL: window.GAZE_API_URL || "http://localhost:5000/api/predict",
+  HEALTH_URL: window.GAZE_HEALTH_URL || "http://localhost:5000/api/health",
+  MAX_FILE_SIZE_MB: 16
+};
+
+const tabs = document.querySelectorAll('.tab');
+const uploadPane = document.getElementById('upload-pane');
+const cameraPane = document.getElementById('camera-pane');
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  const isUpload = t.dataset.tab === 'upload';
+  uploadPane.style.display = isUpload ? 'block' : 'none';
+  cameraPane.style.display = isUpload ? 'none' : 'block';
+}));
+
+// ---- Upload flow ----
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file-input');
+const preview = document.getElementById('preview');
+const dropText = document.getElementById('drop-text');
+const predictBtn = document.getElementById('predict-btn');
+let currentBlob = null;
+let currentPreviewUrl = null;
+
+// Memory-safe preview URL management
+function setPreview(src) {
+  // Revoke previous URL to prevent memory leak
+  if (currentPreviewUrl) {
+    URL.revokeObjectURL(currentPreviewUrl);
+  }
+  currentPreviewUrl = src;
+  preview.src = src;
+  preview.style.display = 'block';
+  dropText.style.display = 'none';
+}
+
+drop.addEventListener('click', () => fileInput.click());
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+drop.addEventListener('drop', e => { if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file){
+  // Validate file size
+  const maxSize = CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024;
+  if (file.size > maxSize) {
+    alert(`File too large. Maximum size is ${CONFIG.MAX_FILE_SIZE_MB}MB.`);
+    return;
+  }
+  
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    alert('Please upload an image file.');
+    return;
+  }
+  
+  currentBlob = file;
+  const url = URL.createObjectURL(file);
+  setPreview(url);
+  predictBtn.disabled = false;
+}
+
+// ---- Webcam flow ----
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const camStart = document.getElementById('cam-start');
+const camShot = document.getElementById('cam-shot');
+let stream = null;
+
+camStart.addEventListener('click', async () => {
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
+    camShot.disabled = false;
+    camStart.textContent = 'Stop Camera';
+    camStart.onclick = stopCamera;
+  }catch(err){
+    alert('Could not access camera: ' + err.message);
+  }
+});
+
+function stopCamera() {
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  video.srcObject = null;
+  camShot.disabled = true;
+  camStart.textContent = 'Start Camera';
+  camStart.onclick = arguments.callee;
+}
+
+camShot.addEventListener('click', () => {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  canvas.toBlob(blob => {
+    currentBlob = blob;
+    predictBtn.disabled = false;
+    // Show captured frame as preview
+    const url = URL.createObjectURL(blob);
+    setPreview(url);
+  }, 'image/jpeg', 0.92);
+});
+
+// ---- Predict ----
+const resultBox = document.getElementById('result');
+predictBtn.addEventListener('click', async () => {
+  if(!currentBlob) return;
+  resultBox.innerHTML = '<div class="eyebrow">02 — Prediction</div><div class="loading">Analyzing...</div>';
+  predictBtn.disabled = true;
+
+  const formData = new FormData();
+  formData.append('image', currentBlob, 'capture.jpg');
+
+  try{
+    const res = await fetch(CONFIG.API_URL, { 
+      method: 'POST', 
+      body: formData,
+      signal: AbortSignal.timeout(30000) // 30 second timeout
+    });
+    const data = await res.json();
+    if(!res.ok){ throw new Error(data.error || 'Request failed'); }
+    renderResult(data);
+  }catch(err){
+    let errorMessage = err.message;
+    if (err.name === 'TimeoutError') {
+      errorMessage = 'Request timed out. Please try again.';
+    } else if (err.message === 'Failed to fetch') {
+      errorMessage = 'Cannot connect to server. Make sure the backend is running at ' + CONFIG.API_URL;
+    }
+    resultBox.innerHTML = `<div class="eyebrow">02 — Prediction</div><div class="err">Error: ${errorMessage}</div>`;
+  }finally{
+    predictBtn.disabled = false;
+  }
+});
+
+function renderResult(data){
+  if(!data.faces_detected){
+    resultBox.innerHTML = '<div class="eyebrow">02 — Prediction</div><div class="empty">No face detected. Try a clearer, front-facing photo.</div>';
+    return;
+  }
+  const f = data.faces[0];
+  const scores = f.scores || {};
+  let bars = '';
+  for(const [label, val] of Object.entries(scores)){
+    const cls = label.toLowerCase().startsWith('w') ? 'w' : '';
+    bars += `<div class="bar-row"><span>${label}</span><div class="bar-track"><div class="bar-fill ${cls}" style="width:${val}%"></div></div><span>${val}%</span></div>`;
+  }
+  resultBox.innerHTML = `
+    <div class="eyebrow">02 — Prediction</div>
+    <div class="verdict">${f.gender}</div>
+    <div class="conf">confidence ${f.confidence}% · ${data.faces_detected} face(s) · ${data.processing_time_ms}ms</div>
+    ${bars}
+  `;
+}
+
+// ---- Reset ----
+document.getElementById('reset-btn').addEventListener('click', () => {
+  currentBlob = null;
+  
+  // Clean up preview URL
+  if (currentPreviewUrl) {
+    URL.revokeObjectURL(currentPreviewUrl);
+    currentPreviewUrl = null;
+  }
+  
+  preview.style.display = 'none';
+  dropText.style.display = 'block';
+  fileInput.value = '';
+  predictBtn.disabled = true;
+  resultBox.innerHTML = '<div class="eyebrow">02 — Prediction</div><div class="empty">No image analyzed yet.</div>';
+  
+  // Stop camera if running
+  stopCamera();
+});
+
+// ---- Health check on load ----
+window.addEventListener('load', async () => {
+  try {
+    const res = await fetch(CONFIG.HEALTH_URL, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error('Server not healthy');
+  } catch (err) {
+    console.warn('Backend not available:', err.message);
+  }
+});
+</script>
+</body>
+</html>

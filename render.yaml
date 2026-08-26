@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: gaze-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: FLASK_DEBUG
+        value: "false"
+      - key: FLASK_HOST
+        value: "0.0.0.0"
+      - key: FLASK_PORT
+        value: "5000"
+      - key: CORS_ORIGINS
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+    disk:
+      name: uploads
+      mountPath: /app/uploads
+      sizeGB: 1
+
+  - type: web
+    name: gaze-frontend
+    runtime: static
+    buildCommand: echo "Static site"
+    staticPublishPath: ./frontend
+    envVars:
+      - key: NODE_VERSION
+        value: "18"
