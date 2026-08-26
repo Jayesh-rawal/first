@@ -11,9 +11,13 @@ services:
       - FLASK_DEBUG=false
       - FLASK_HOST=0.0.0.0
       - FLASK_PORT=5000
-      - CORS_ORIGINS=http://localhost:8080,http://localhost:3000
+      - CORS_ORIGINS=*
       - MAX_CONTENT_LENGTH_MB=16
       - RATE_LIMIT_PER_MINUTE=60
+      - DETECTOR_BACKEND=opencv
+      - ENFORCE_DETECTION=true
+      - UPLOAD_MAX_AGE_HOURS=24
+      - MAX_UPLOAD_FILES=1000
     volumes:
       - uploads:/app/uploads
     restart: unless-stopped
@@ -22,7 +26,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
 
   frontend:
     image: nginx:alpine
@@ -37,3 +46,4 @@ services:
 
 volumes:
   uploads:
+    driver: local

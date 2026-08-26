@@ -3,27 +3,28 @@ services:
     name: gaze-backend
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
     envVars:
       - key: FLASK_DEBUG
         value: "false"
       - key: FLASK_HOST
         value: "0.0.0.0"
-      - key: FLASK_PORT
-        value: "5000"
       - key: CORS_ORIGINS
-        sync: false
+        value: "*"
+      - key: DETECTOR_BACKEND
+        value: "opencv"
       - key: PYTHON_VERSION
         value: "3.11.0"
     disk:
       name: uploads
       mountPath: /app/uploads
       sizeGB: 1
+    healthCheckPath: /api/health
 
   - type: web
     name: gaze-frontend
     runtime: static
-    buildCommand: echo "Static site"
+    buildCommand: echo "Static site - no build needed"
     staticPublishPath: ./frontend
     envVars:
       - key: NODE_VERSION
