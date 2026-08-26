@@ -2,9 +2,7 @@
 nixPkgs = ["python311", "gcc", "libGL", "glib"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
-
-[phases.build]
+cmds = ["python3 -m pip install -r requirements.txt"]
 
 [start]
-cmd = "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120"
+cmd = "python3 -m gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120"
