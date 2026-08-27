@@ -51,7 +51,7 @@ Returns:
   ],
   "actions": ["gender", "age", "race", "emotion"],
   "processing_time_ms": 450.2,
-  "model": "DeepFace-opencv"
+  "model": "Lightface-opencv-dnn"
 }
 ```
 
