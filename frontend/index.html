@@ -755,10 +755,10 @@ footer a {
       Analyze any face<br>
       <span class="gradient-text">in milliseconds</span>
     </h1>
-    <p>Upload a photo or use your webcam to detect gender, age, race, and emotions with state-of-the-art deep learning.</p>
+    <p>Upload a photo or use your webcam to detect gender and age with state-of-the-art deep learning.</p>
     <div class="hero-stats">
       <div class="hero-stat">
-        <div class="hero-stat-value">4</div>
+        <div class="hero-stat-value">2</div>
         <div class="hero-stat-label">Attributes</div>
       </div>
       <div class="hero-stat">
@@ -985,7 +985,9 @@ els.tabs.forEach(tab => {
     els.cameraPane.classList.toggle('hidden', isUpload);
     
     if (!isUpload) {
-      els.cameraBtn.style.display = 'none';
+      // Camera tab: ensure camera button is visible to start/capture
+      els.cameraBtn.style.display = '';
+      if (!state.cameraActive) els.cameraBtn.textContent = '🎥';
     } else {
       els.cameraBtn.style.display = '';
       stopCamera();
@@ -1039,7 +1041,7 @@ function handleFile(file) {
 // ============================================================
 els.cameraBtn.addEventListener('click', () => {
   if (state.cameraActive) {
-    stopCamera();
+    captureFromCamera();
   } else {
     startCamera();
   }
@@ -1051,13 +1053,47 @@ async function startCamera() {
       video: { facingMode: 'user', width: 640, height: 480 } 
     });
     els.video.srcObject = state.stream;
+    await els.video.play();
     els.video.style.display = 'block';
     els.cameraOverlay.classList.add('hidden');
     state.cameraActive = true;
-    els.cameraBtn.textContent = '⏹️';
+    // Show camera button acting as capture button
+    els.cameraBtn.textContent = '📷';
+    els.cameraBtn.title = 'Capture Photo';
   } catch (err) {
     showError('Could not access camera: ' + err.message);
+    stopCamera();
   }
+}
+
+function captureFromCamera() {
+  if (!state.cameraActive) return;
+  const video = els.video;
+  const canvas = els.canvas;
+  const w = video.videoWidth || 640;
+  const h = video.videoHeight || 480;
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, w, h);
+  canvas.toBlob((blob) => {
+    if (!blob) {
+      showError('Failed to capture photo.');
+      return;
+    }
+    // Stop the camera and use the captured frame
+    stopCamera();
+    state.currentBlob = blob;
+    const url = URL.createObjectURL(blob);
+    setPreview(url);
+    els.analyzeBtn.disabled = false;
+    // Switch back to upload tab to show preview
+    els.tabs.forEach(t => t.classList.remove('active'));
+    document.querySelector('[data-tab="upload"]').classList.add('active');
+    els.uploadPane.classList.remove('hidden');
+    els.cameraPane.classList.add('hidden');
+    els.cameraBtn.style.display = '';
+  }, 'image/jpeg', 0.92);
 }
 
 function stopCamera() {
@@ -1070,6 +1106,7 @@ function stopCamera() {
   els.cameraOverlay.classList.remove('hidden');
   state.cameraActive = false;
   els.cameraBtn.textContent = '🎥';
+  els.cameraBtn.title = 'Toggle Camera';
 }
 
 // ============================================================

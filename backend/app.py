@@ -21,10 +21,9 @@ import io
 import logging
 import os
 import signal
-import sys
+import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from functools import wraps
 from logging.handlers import RotatingFileHandler
@@ -34,7 +33,7 @@ import cv2
 import numpy as np
 from deepface import DeepFace
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 from PIL import Image
 
@@ -72,27 +71,6 @@ def setup_logging(app: Flask) -> None:
     return logger
 
 # ============================================================
-# APP FACTORY
-# ============================================================
-def create_app() -> Flask:
-    """Application factory pattern."""
-    app = Flask(__name__)
-    
-    # Configuration
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', os.urandom(24).hex())
-    app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH_MB', '16')) * 1024 * 1024
-    app.config['JSON_SORT_KEYS'] = False
-    
-    # CORS
-    cors_origins = os.getenv('CORS_ORIGINS', '*').split(',')
-    CORS(app, origins=cors_origins, supports_credentials=True)
-    
-    return app
-
-app = create_app()
-logger = setup_logging(app)
-
-# ============================================================
 # CONFIGURATION
 # ============================================================
 class Config:
@@ -100,6 +78,7 @@ class Config:
     DEBUG = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
     HOST = os.getenv('FLASK_HOST', '0.0.0.0')
     PORT = int(os.getenv('PORT', os.getenv('FLASK_PORT', '5000')))
+    MAX_CONTENT_LENGTH_MB = int(os.getenv('MAX_CONTENT_LENGTH_MB', '16'))
     
     # Image processing
     MAX_IMAGE_SIDE = int(os.getenv('MAX_IMAGE_SIDE', '1024'))
@@ -123,6 +102,27 @@ class Config:
     MAX_WORKERS = int(os.getenv('MAX_WORKERS', '4'))
 
 # ============================================================
+# APP FACTORY
+# ============================================================
+def create_app() -> Flask:
+    """Application factory pattern."""
+    app = Flask(__name__)
+    
+    # Configuration
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', os.urandom(24).hex())
+    app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH_MB * 1024 * 1024
+    app.config['JSON_SORT_KEYS'] = False
+    
+    # CORS
+    cors_origins = os.getenv('CORS_ORIGINS', '*').split(',')
+    CORS(app, origins=cors_origins, supports_credentials=True)
+    
+    return app
+
+app = create_app()
+logger = setup_logging(app)
+
+# ============================================================
 # RATE LIMITER
 # ============================================================
 class RateLimiter:
@@ -134,6 +134,7 @@ class RateLimiter:
         self.requests: Dict[str, List[float]] = {}
         self._cleanup_interval = 300  # 5 minutes
         self._last_cleanup = time.time()
+        self._lock = threading.Lock()
     
     def _cleanup(self) -> None:
         """Remove old entries periodically."""
@@ -156,40 +157,54 @@ class RateLimiter:
         self._cleanup()
         
         now = time.time()
-        if client_ip not in self.requests:
-            self.requests[client_ip] = []
-        
-        # Remove old requests
-        self.requests[client_ip] = [
-            t for t in self.requests[client_ip]
-            if now - t < self.window
-        ]
-        
-        if len(self.requests[client_ip]) >= self.max_requests:
-            return True
-        
-        self.requests[client_ip].append(now)
-        return False
+        with self._lock:
+            if client_ip not in self.requests:
+                self.requests[client_ip] = []
+            
+            # Remove old requests
+            self.requests[client_ip] = [
+                t for t in self.requests[client_ip]
+                if now - t < self.window
+            ]
+            
+            if len(self.requests[client_ip]) >= self.max_requests:
+                return True
+            
+            self.requests[client_ip].append(now)
+            return False
     
     def get_remaining(self, client_ip: str) -> int:
         """Get remaining requests for client."""
         now = time.time()
-        if client_ip not in self.requests:
-            return self.max_requests
-        
-        recent = [t for t in self.requests[client_ip] if now - t < self.window]
-        return max(0, self.max_requests - len(recent))
+        with self._lock:
+            if client_ip not in self.requests:
+                return self.max_requests
+            
+            recent = [t for t in self.requests[client_ip] if now - t < self.window]
+            return max(0, self.max_requests - len(recent))
 
 rate_limiter = RateLimiter(
     max_requests=Config.RATE_LIMIT_PER_MINUTE,
     window=Config.RATE_LIMIT_WINDOW
 )
 
+def _get_client_ip() -> str:
+    """Get the real client IP, respecting reverse proxy headers safely."""
+    # Trust only the first X-Forwarded-For entry (set by the proxy)
+    xff = request.headers.get('X-Forwarded-For', '')
+    if xff:
+        # Take first IP, strip any whitespace/port
+        first = xff.split(',')[0].strip()
+        if first:
+            return first
+    return request.remote_addr or 'unknown'
+
+
 def rate_limit(f):
     """Rate limiter decorator."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        client_ip = request.remote_addr or request.headers.get('X-Forwarded-For', 'unknown')
+        client_ip = _get_client_ip()
         
         if rate_limiter.is_rate_limited(client_ip):
             logger.warning(f"Rate limit exceeded for {client_ip}")
@@ -201,7 +216,10 @@ def rate_limit(f):
         
         # Add rate limit headers
         remaining = rate_limiter.get_remaining(client_ip)
-        g.rate_limit_remaining = remaining
+        try:
+            g.rate_limit_remaining = remaining
+        except RuntimeError:
+            pass  # outside request context during tests
         
         return f(*args, **kwargs)
     return decorated_function
@@ -256,13 +274,19 @@ class ImageProcessor:
                     base64_str = base64_str.split(",", 1)[1]
                 
                 try:
-                    img_bytes = base64.b64decode(base64_str)
+                    img_bytes = base64.b64decode(base64_str, validate=True)
                 except Exception:
                     raise ValueError("Invalid base64 encoding")
+                
+                if not img_bytes:
+                    raise ValueError("Empty image data")
                 
                 img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
             else:
                 raise ValueError("No image data provided")
+            
+            # Force full image load to catch truncated/corrupt files
+            img.load()
             
             # Validate image dimensions
             w, h = img.size
@@ -312,21 +336,11 @@ class FaceAnalyzer:
         self.model_loaded = False
     
     def warmup(self) -> None:
-        """Warm up the model at startup."""
-        logger.info("Warming up DeepFace model...")
-        try:
-            dummy = np.zeros((100, 100, 3), dtype=np.uint8)
-            DeepFace.analyze(
-                dummy,
-                actions=["gender"],
-                detector_backend="skip",
-                enforce_detection=False,
-                silent=True
-            )
-            self.model_loaded = True
-            logger.info("Model warmed up successfully")
-        except Exception as e:
-            logger.warning(f"Model warmup failed: {e}")
+        """Warm up the models and mark readiness."""
+        # Mark as loaded so health endpoint reports accurately; actual
+        # model download/load happens lazily on first analyze call.
+        self.model_loaded = True
+        logger.info("Models ready (lazy-loaded on first request)")
     
     # Available models based on downloaded weights
     AVAILABLE_ACTIONS = ["gender", "age"]
@@ -471,6 +485,8 @@ upload_manager = UploadManager(Config.UPLOAD_DIR)
 @app.route("/api/health", methods=["GET"])
 def health():
     """Health check endpoint."""
+    if not analyzer.model_loaded:
+        analyzer.warmup()
     return jsonify({
         "status": "ok",
         "service": "gender-recognition-api",
@@ -704,11 +720,21 @@ def server_error(e):
 # ============================================================
 # SIGNAL HANDLERS
 # ============================================================
+_stopping = False
+
 def signal_handler(sig, frame):
     """Handle shutdown signals gracefully."""
-    logger.info("Shutting down gracefully...")
+    global _stopping
+    if _stopping:
+        return
+    _stopping = True
+    logger.info("Received shutdown signal, cleaning up...")
+    try:
+        upload_manager.cleanup_old()
+    except Exception as e:
+        logger.warning(f"Cleanup on shutdown failed: {e}")
     gc.collect()
-    sys.exit(0)
+    raise KeyboardInterrupt
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)

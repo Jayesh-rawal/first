@@ -14,10 +14,13 @@ from unittest.mock import patch, MagicMock
 import numpy as np
 import cv2
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add project root to path for backend imports
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, 'backend'))
 
-from app import app, Config, rate_limiter, analyzer, upload_manager
+from backend.app import app, Config, rate_limiter, analyzer, upload_manager
+from backend.app import ImageProcessor
 
 
 class TestConfig(unittest.TestCase):
@@ -72,13 +75,11 @@ class TestImageProcessor(unittest.TestCase):
     
     def test_validate_file_no_file(self):
         """Test validation with no file."""
-        from app import ImageProcessor
         valid, msg = ImageProcessor.validate_file(None)
         self.assertFalse(valid)
     
     def test_decode_base64(self):
         """Test base64 decoding."""
-        from app import ImageProcessor
         
         # Create test image
         img = np.zeros((100, 100, 3), dtype=np.uint8)
@@ -90,7 +91,6 @@ class TestImageProcessor(unittest.TestCase):
     
     def test_decode_base64_with_prefix(self):
         """Test base64 decoding with data URL prefix."""
-        from app import ImageProcessor
         
         img = np.zeros((100, 100, 3), dtype=np.uint8)
         _, buffer = cv2.imencode('.jpg', img)
@@ -102,21 +102,18 @@ class TestImageProcessor(unittest.TestCase):
     
     def test_decode_invalid_base64(self):
         """Test invalid base64 handling."""
-        from app import ImageProcessor
         
         with self.assertRaises(ValueError):
             ImageProcessor.decode_image(base64_str="invalid_base64_data")
     
     def test_decode_no_data(self):
         """Test no data provided."""
-        from app import ImageProcessor
         
         with self.assertRaises(ValueError):
             ImageProcessor.decode_image()
     
     def test_enhance_image(self):
         """Test image enhancement."""
-        from app import ImageProcessor
         
         img = np.zeros((100, 100, 3), dtype=np.uint8)
         result = ImageProcessor.enhance_image(img)
