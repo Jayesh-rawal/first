@@ -34,9 +34,6 @@ desktop.ini
 # Logs
 *.log
 
-# Model cache (will be downloaded on first run)
-~/.deepface/
-
 # Node
 node_modules/
 

@@ -31,11 +31,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-from deepface import DeepFace
 from dotenv import load_dotenv
 from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 from PIL import Image
+
+from .lightface import analyzer
 
 # Load environment variables
 load_dotenv()
@@ -94,8 +95,8 @@ class Config:
     UPLOAD_MAX_AGE_HOURS = int(os.getenv('UPLOAD_MAX_AGE_HOURS', '24'))
     MAX_UPLOAD_FILES = int(os.getenv('MAX_UPLOAD_FILES', '1000'))
     
-    # DeepFace settings
-    DETECTOR_BACKEND = os.getenv('DETECTOR_BACKEND', 'opencv')
+    # Analyzer settings (lightweight OpenCV DNN backend)
+    ANALYZER_BACKEND = 'opencv-dnn'
     ENFORCE_DETECTION = os.getenv('ENFORCE_DETECTION', 'true').lower() == 'true'
     
     # Thread pool
@@ -327,92 +328,12 @@ class ImageProcessor:
         return cv2.addWeighted(image, 0.7, sharpened, 0.3, 0)
 
 # ============================================================
-# FACE ANALYZER
+# FACE ANALYZER (lightweight OpenCV DNN backend)
 # ============================================================
-class FaceAnalyzer:
-    """Handle face detection and analysis."""
-    
-    def __init__(self):
-        self.model_loaded = False
-    
-    def warmup(self) -> None:
-        """Warm up the models and mark readiness."""
-        # Mark as loaded so health endpoint reports accurately; actual
-        # model download/load happens lazily on first analyze call.
-        self.model_loaded = True
-        logger.info("Models ready (lazy-loaded on first request)")
-    
-    # Available models based on downloaded weights
-    AVAILABLE_ACTIONS = ["gender", "age"]
-    
-    def analyze_face(
-        self,
-        image: np.ndarray,
-        actions: List[str] = None,
-        enforce_detection: bool = True
-    ) -> Dict[str, Any]:
-        """
-        Analyze a single face in the image.
-        
-        Args:
-            image: BGR numpy array
-            actions: List of actions (gender, age, race, emotion)
-            enforce_detection: Whether to enforce face detection
-        
-        Returns:
-            Dictionary with analysis results
-        """
-        if actions is None:
-            actions = ["gender", "age"]
-        
-        # Filter to only available actions
-        available = [a for a in actions if a in self.AVAILABLE_ACTIONS]
-        if not available:
-            available = ["gender"]
-        
-        try:
-            results = DeepFace.analyze(
-                img_path=image,
-                actions=available,
-                detector_backend=Config.DETECTOR_BACKEND,
-                enforce_detection=enforce_detection,
-                silent=True
-            )
-            
-            # Handle single face result
-            if isinstance(results, dict):
-                results = [results]
-            
-            return {"faces": results, "error": None}
-            
-        except ValueError as e:
-            if "face" in str(e).lower():
-                return {"faces": [], "error": "No face detected"}
-            return {"faces": [], "error": str(e)}
-        except Exception as e:
-            logger.error(f"Analysis failed: {e}")
-            return {"faces": [], "error": "Analysis failed"}
-    
-    def analyze_multiple(
-        self,
-        image: np.ndarray,
-        actions: List[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Analyze all faces in the image.
-        
-        Returns:
-            Dictionary with all faces analysis
-        """
-        result = self.analyze_face(image, actions, enforce_detection=True)
-        
-        if result["error"]:
-            # Try without enforcement
-            result = self.analyze_face(image, actions, enforce_detection=False)
-        
-        return result
-
-analyzer = FaceAnalyzer()
+# The old DeepFace/TensorFlow backend OOM-crashed on the free tier
+# (512MB). We now use the lightweight OpenCV Caffe age/gender models
+# defined in lightface.py (imported above as `analyzer`), which expose
+# the same analyze_multiple API used by the predict routes.
 
 # ============================================================
 # UPLOAD MANAGER
@@ -581,7 +502,7 @@ def predict_v1():
             "faces": faces,
             "actions": actions,
             "processing_time_ms": processing_time,
-            "model": f"DeepFace-{Config.DETECTOR_BACKEND}"
+            "model": f"Lightface-{Config.ANALYZER_BACKEND}"
         })
         
     except ValueError as e:

@@ -13,9 +13,6 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download the DeepFace model during build
-RUN python -c "from deepface import DeepFace; DeepFace.build_model('VGG-Face')" || true
-
 # Copy application code
 COPY . .
 
